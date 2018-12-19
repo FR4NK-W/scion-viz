@@ -25,4 +25,5 @@ urlpatterns = [
     url(r'^labels/', 'asviz.views.labels'),
     url(r'^locations/', 'asviz.views.locations'),
     url(r'^geolocate/', 'asviz.views.geolocate'),
+    url(r'^dynamic_link/', 'asviz.views.dynamic_link'),
 ]

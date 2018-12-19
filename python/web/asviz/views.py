@@ -24,6 +24,7 @@ from datetime import datetime
 import pathlib
 from django.http import HttpResponse
 from django.shortcuts import render
+from django.views.decorators.csrf import ensure_csrf_cookie
 
 import lib.app.sciond as lib_sciond
 from as_viewer.settings import SCION_ROOT, BASE_DIR
@@ -748,7 +749,7 @@ def findCerts(conf_dir, extension):
             certs.append(os.path.join(certDir, file))
     return certs
 
-
+@ensure_csrf_cookie
 def index(request):
     '''
     Main index handler for index.html for main visualization page.
@@ -865,6 +866,53 @@ def hosttime(request):
     ts = time.time() * 1000
     json_ts = '{"hosttime_ms": %s}' % ts
     resp = HttpResponse(json_ts, content_type="text/json; charset=utf-8")
+    return resp
+
+
+def get_br_ip_port(link, src_filter=None):
+    ASes = [e for e in link.split(" ") if "AS" in e]
+    
+    if src_filter:
+        if src_filter not in ASes[0]:
+            ASes = [ASes[1], ASes[0]]
+        if src_filter not in ASes[0]:
+            raise ValueError("src AS %s is not valid for the filter %s" %(AS_fid_src, src_filter))
+    
+    AS_fids = [e.replace("AS", "") for e in ASes]
+    AS_fid_src = AS_fids[0]
+    src_ISD = AS_fid_src.split("-")[0]
+    src_AS = AS_fid_src.split("-")[1]
+    
+    AS_ids = [e.replace("_", ":") for e in AS_fids]
+    AS_id_dst = AS_ids[1]
+    
+    topo_file_path = os.path.join(SCION_ROOT, GEN_PATH, "ISD%s/AS%s/endhost/topology.json" % (src_ISD, src_AS))
+    with open(topo_file_path) as topo_file:
+        topo = json.load(topo_file)
+        ip, port = [(topo["BorderRouters"][border_router]["Interfaces"][e]["Public"]["Addr"], topo["BorderRouters"][border_router]["Interfaces"][e]["Public"]["L4Port"]) for border_router in topo["BorderRouters"] for e in [interface for interface in topo["BorderRouters"][border_router]["Interfaces"]] if topo["BorderRouters"][border_router]["Interfaces"][e]["ISD_AS"] == AS_id_dst][0]
+    return ip, port
+
+
+def dynamic_link(request):
+    json_resp = '{"status": "OK"}'
+    
+    src_filter = None
+    if 'filter' in request.POST.keys() and request.POST['filter'] != "":
+        src_filter = request.POST['filter']
+    
+    if request.POST['action'] == "disable":
+        link = request.POST['link']
+        ip, port = get_br_ip_port(link, src_filter)
+        cmd = 'link_toggle iptables -A OUTPUT -p udp --source %s --sport %s -j DROP -m comment --comment "dynamic link rule";' % (ip, port)
+        subprocess.Popen(cmd, shell=True)
+    elif request.POST['action'] == "enable":
+        link = request.POST['link']
+        ip, port = get_br_ip_port(link, src_filter)
+        cmd = 'link_toggle iptables -D OUTPUT -p udp --source %s --sport %s -j DROP -m comment --comment "dynamic link rule";' % (ip, port)
+        subprocess.Popen(cmd, shell=True)
+    else:
+        json_resp = '{"status": "NotImplemented"}'
+    resp = HttpResponse(json_resp, content_type="text/json; charset=utf-8")
     return resp
 
 

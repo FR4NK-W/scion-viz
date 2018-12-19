@@ -297,9 +297,9 @@ function update() {
 
     var path = linesg.selectAll("path.link").data(graphPath.links)
     path.enter().append("path").attr("class", function(d) {
-        var src = "source-" + d.source.name;
-        var dst = "target-" + d.target.name;
-        return d.type + " link " + src + " " + dst;
+        var src = graphPath.nodes[d.source].name
+        var dst = graphPath.nodes[d.target].name
+        return d.type + " link AS" + src.replace(/:/g, "_") + " AS" + dst.replace(/:/g, "_");
     }).attr("stroke", default_link_color).attr("stroke-opacity",
             default_link_opacity);
     path.exit().remove();
@@ -396,6 +396,63 @@ function update() {
     });
 
     colaPath.start(50, 100, 200);
+    
+    dynamicLinks();
+}
+
+function updateLink(id, action, filter) {
+    return $.ajax({
+        url : 'dynamic_link/',
+        beforeSend: function( xhr ) {
+            xhr.setRequestHeader("X-CSRFToken", $.cookie("csrftoken"));
+        },
+        type : 'post',
+        data : {"link": id, "action": action, "filter": filter},
+        dataType : "json",
+        success : function(data, textStatus, jqXHR) {
+            console.error(textStatus, "Success");
+        },
+        error : function(jqXHR, textStatus, errorThrown) {
+            console.error(textStatus, errorThrown);
+        },
+        complete : function() {
+            alert(action + "d " +id);
+        },
+    });
+}
+
+function dynamicLinks() {
+    var SCIONLabInfix = "-ffaa_1_";
+    var SCIONLabLinks = $('path').not('.host').filter(
+        function() {
+            return this.classList.toString().indexOf(SCIONLabInfix) > -1;
+        }
+    );
+    var dynamicLinks = SCIONLabLinks
+    for (var i=0; i < dynamicLinks.length; i++) {
+        currLink = $("."+dynamicLinks[i].className.baseVal.replace(/ /g, ".")+":last");
+        currLink.off().on("click", function(e) {linkEditPrompt(e, SCIONLabInfix);});
+        currLink.css("cursor", "url('/static/img/scissors32.png') 30 15, pointer");
+    }
+}
+
+function linkEditPrompt(e, filter) {
+    e.stopPropagation()
+    disabled = "#ff0000";
+    enabled = "#00ff00";
+    if ($(e.target).attr("stroke") == disabled) {
+        if (confirm("Restore this link?")) {
+           $(e.target).attr("stroke", enabled);
+           updateLink(e.target.classList.value, "enable", filter);
+           $(e.target).css("cursor", "url('/static/img/scissors32.png') 30 15, pointer");
+        }
+    } else {
+        if (confirm("Cut this link?")) {
+           $(e.target).attr("stroke", disabled);
+           updateLink(e.target.classList.value, "disable", filter);
+           $(e.target).css("cursor", "copy");
+        } else {};
+    }
 }
 
 /*
